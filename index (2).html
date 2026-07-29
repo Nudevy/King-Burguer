@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="pt-MZ">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0c0a09">
+<title>Controle do Dia</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; background:#0c0a09; color:#f5f5f4; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; padding-bottom:80px; }
+  .header { position:sticky; top:0; background:rgba(12,10,9,0.95); backdrop-filter:blur(8px); border-bottom:1px solid #292524; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; z-index:10; }
+  .eyebrow { font-size:10px; letter-spacing:0.2em; text-transform:uppercase; color:#d97706; }
+  .title { font-size:18px; font-weight:700; }
+  .content { padding:16px; }
+  .card { background:#1c1917; border:1px solid #292524; border-radius:16px; padding:16px; margin-bottom:12px; }
+  .card.hero { background:linear-gradient(135deg,#d97706,#b45309); border-color:#d97706; }
+  .label { font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:#a8a29e; margin-bottom:8px; }
+  .big { font-size:30px; font-weight:800; color:white; margin-top:4px; }
+  .row { display:flex; justify-content:space-between; align-items:center; }
+  input { width:100%; background:#0c0a09; border:1px solid #44403c; border-radius:12px; padding:10px 12px; font-size:14px; color:#f5f5f4; }
+  input:focus { outline:none; border-color:#d97706; }
+  .numpad { font-size:26px; font-weight:700; text-align:center; padding:14px; }
+  button { font-family:inherit; cursor:pointer; border:none; }
+  .btn-primary { width:100%; background:#d97706; color:white; border-radius:12px; padding:13px; font-weight:600; font-size:14px; margin-top:10px; }
+  .btn-secondary { width:100%; background:#44403c; color:white; border-radius:12px; padding:13px; font-weight:600; font-size:14px; margin-top:10px; }
+  .tabbar { position:fixed; bottom:0; left:0; right:0; background:#1c1917; border-top:1px solid #292524; display:flex; justify-content:space-around; padding:8px 0; }
+  .tab { background:none; color:#78716c; display:flex; flex-direction:column; align-items:center; gap:2px; font-size:9px; padding:4px 8px; position:relative; }
+  .tab.active { color:#d97706; }
+  .dot { position:absolute; top:0; right:2px; width:7px; height:7px; border-radius:50%; background:#ef4444; }
+  .item-row { display:flex; justify-content:space-between; align-items:center; border:1px solid #292524; border-radius:12px; padding:10px 12px; margin-bottom:8px; background:#0c0a09; }
+  .item-row.low { border-color:#7f1d1d; background:rgba(127,29,29,0.2); }
+  .qty-btn { width:30px; height:30px; border-radius:50%; background:#292524; color:white; font-size:16px; }
+  .list-item { display:flex; justify-content:space-between; border-bottom:1px solid #292524; padding:8px 0; font-size:13px; }
+  .muted { color:#78716c; font-size:11px; }
+  .prod-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .prod-btn { background:#0c0a09; border:1px solid #44403c; border-radius:12px; padding:12px; text-align:left; }
+  .prod-btn .nome { font-size:13px; font-weight:600; }
+  .prod-btn .preco { color:#d97706; font-weight:700; font-size:13px; margin-top:4px; }
+  .del { color:#57534e; background:none; padding:4px; }
+  .warn { background:#450a0a; border:1px solid #7f1d1d; color:#fca5a5; border-radius:10px; padding:8px 12px; font-size:12px; margin-bottom:10px; }
+  .empty { color:#78716c; font-size:13px; padding:8px 0; }
+  .ingr-toggle { display:flex; justify-content:space-between; align-items:center; border:1px solid #292524; border-radius:12px; padding:8px 12px; margin-bottom:6px; }
+  .ingr-toggle.on { border-color:#d97706; background:rgba(217,119,6,0.1); }
+  .ingr-toggle span { font-size:13px; }
+  .ingr-toggle input { width:50px; padding:6px; }
+  .setup { min-height:100vh; display:flex; flex-direction:column; justify-content:center; padding:24px; }
+  .code-box { font-size:28px; font-weight:800; letter-spacing:4px; text-align:center; background:#1c1917; border:2px dashed #d97706; border-radius:14px; padding:18px; color:#f59e0b; margin:14px 0; }
+  .sync-pill { font-size:10px; background:#1c1917; border:1px solid #292524; border-radius:20px; padding:4px 10px; color:#a8a29e; display:flex; align-items:center; gap:6px; }
+  .sync-dot { width:6px; height:6px; border-radius:50%; background:#22c55e; }
+  .sync-dot.off { background:#ef4444; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+const LOCAL_KEY = "ff-control-local-v2";
+const SYNC_ID_KEY = "ff-sync-id";
+const BLOB_API = "https://jsonblob.com/api/jsonBlob";
+const today = () => new Date().toISOString().slice(0,10);
+const fmtMT = n => n.toLocaleString("pt-MZ") + " MT";
+const fmtTime = iso => new Date(iso).toLocaleTimeString("pt-MZ",{hour:"2-digit",minute:"2-digit"});
+const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+function emptyState() {
+  return {
+    vendas: [], saidas: [], produtos: [],
+    estoque: [
+      {id:"1",nome:"Frango (unid)",qtd:20,minimo:5},
+      {id:"2",nome:"Pão",qtd:60,minimo:15},
+      {id:"3",nome:"Óleo (L)",qtd:10,minimo:3},
+      {id:"4",nome:"Batata (kg)",qtd:15,minimo:5},
+      {id:"5",nome:"Ovo (unid)",qtd:30,minimo:6},
+      {id:"6",nome:"Queijo (fatia)",qtd:40,minimo:10},
+    ],
+    movEstoque: []
+  };
+}
+
+let data = null;
+let tab = "resumo";
+let recipeSel = {};
+let editingProdId = null;
+let syncId = localStorage.getItem(SYNC_ID_KEY);
+let online = false;
+let syncing = false;
+let pollTimer = null;
+
+// ---------- SYNC LAYER ----------
+async function criarNovoControle() {
+  syncing = true; renderSetup();
+  try {
+    const res = await fetch(BLOB_API, {
+      method: "POST",
+      headers: {"Content-Type":"application/json", "Accept":"application/json"},
+      body: JSON.stringify(emptyState())
+    });
+    const loc = res.headers.get("Location") || res.headers.get("location");
+    const id = loc ? loc.split("/").pop() : null;
+    if (!id) throw new Error("sem id");
+    syncId = id;
+    localStorage.setItem(SYNC_ID_KEY, id);
+    data = emptyState();
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
+    online = true;
+    startApp();
+  } catch(e) {
+    syncing = false;
+    alert("Não consegui criar o sincronismo agora. Verifica a internet e tenta de novo.");
+    renderSetup();
+  }
+}
+
+async function entrarComCodigo(codigo) {
+  syncing = true; renderSetup();
+  try {
+    const res = await fetch(BLOB_API + "/" + codigo);
+    if (!res.ok) throw new Error("não encontrado");
+    const remote = await res.json();
+    syncId = codigo;
+    localStorage.setItem(SYNC_ID_KEY, codigo);
+    data = remote;
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
+    online = true;
+    startApp();
+  } catch(e) {
+    syncing = false;
+    alert("Código não encontrado. Confirma com quem te enviou.");
+    renderSetup();
+  }
+}
+
+async function pushToServer() {
+  if (!syncId) return;
+  try {
+    await fetch(BLOB_API + "/" + syncId, {
+      method: "PUT",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(data)
+    });
+    online = true;
+  } catch(e) { online = false; }
+  updateSyncPill();
+}
+
+async function pullFromServer(silent) {
+  if (!syncId) return;
+  try {
+    const res = await fetch(BLOB_API + "/" + syncId);
+    if (res.ok) {
+      const remote = await res.json();
+      const remoteStr = JSON.stringify(remote);
+      if (remoteStr !== JSON.stringify(data)) {
+        data = remote;
+        localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
+        render();
+      }
+      online = true;
+    } else { online = false; }
+  } catch(e) { online = false; }
+  updateSyncPill();
+}
+
+function updateSyncPill() {
+  const el = document.getElementById("sync-pill");
+  if (el) {
+    el.querySelector(".sync-dot").className = "sync-dot" + (online ? "" : " off");
+    el.querySelector(".sync-label").textContent = online ? "sincronizado" : "sem internet";
+  }
+}
+
+function save(newData) {
+  data = newData;
+  localStorage.setItem(LOCAL_KEY, JSON.stringify(data));
+  render();
+  pushToServer();
+}
+
+function startApp() {
+  if (!data) {
+    try { data = JSON.parse(localStorage.getItem(LOCAL_KEY)) || emptyState(); }
+    catch(e) { data = emptyState(); }
+  }
+  document.getElementById("app").innerHTML = `
+    <div class="header">
+      <div>
+        <div class="eyebrow">Xipamanine</div>
+        <div class="title">Controle do Dia</div>
+      </div>
+      <div id="sync-pill" class="sync-pill" onclick="mostrarCodigo()">
+        <span class="sync-dot"></span><span class="sync-label">a sincronizar…</span>
+      </div>
+    </div>
+    <div class="content" id="content"></div>
+    <div class="tabbar" id="tabbar"></div>
+  `;
+  render();
+  pullFromServer(true);
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(() => pullFromServer(true), 5000);
+}
+
+function mostrarCodigo() {
+  alert("Código de sincronização (partilha com a tua equipa):\n\n" + syncId + "\n\nEles devem abrir o app e tocar em 'Já tenho um código'.");
+}
+
+// ---------- SETUP SCREEN ----------
+function renderSetup() {
+  document.getElementById("app").innerHTML = `
+    <div class="setup">
+      <div class="eyebrow" style="text-align:center">Xipamanine</div>
+      <div class="title" style="text-align:center;font-size:22px;margin-bottom:6px">Controle do Dia</div>
+      <div class="muted" style="text-align:center;margin-bottom:20px">Configura a sincronização entre os celulares da equipa</div>
+      <div class="card">
+        <div class="label">Sou o dono — primeira vez</div>
+        <button class="btn-primary" ${syncing?'disabled':''} onclick="criarNovoControle()">${syncing?'A criar…':'Criar novo controle'}</button>
+      </div>
+      <div class="card">
+        <div class="label">Já tenho um código (funcionário)</div>
+        <input id="codigo-input" placeholder="Cola o código aqui" style="margin-bottom:8px">
+        <button class="btn-secondary" ${syncing?'disabled':''} onclick="entrarComCodigo(document.getElementById('codigo-input').value.trim())">${syncing?'A entrar…':'Entrar'}</button>
+      </div>
+    </div>
+  `;
+}
+
+// ---------- RENDER (same UI as before) ----------
+function setTab(t) { tab = t; render(); }
+
+function render() {
+  const hoje = today();
+  const vendasHoje = data.vendas.filter(v => v.data === hoje);
+  const saidasHoje = data.saidas.filter(s => s.data === hoje);
+  const totalVendas = vendasHoje.reduce((a,v)=>a+v.valor,0);
+  const totalSaidas = saidasHoje.reduce((a,s)=>a+s.valor,0);
+  const caixa = totalVendas - totalSaidas;
+  const estoqueBaixo = data.estoque.filter(i => i.qtd <= i.minimo);
+
+  const c = document.getElementById("content");
+  if (!c) return;
+
+  if (tab === "resumo") {
+    c.innerHTML = `
+      <div class="card hero">
+        <div class="label" style="color:#fed7aa">Caixa de hoje</div>
+        <div class="big">${fmtMT(caixa)}</div>
+        <div class="row" style="margin-top:10px;font-size:13px;color:#fff7ed">
+          <div>Vendas <b>${fmtMT(totalVendas)}</b></div>
+          <div>Saídas <b>${fmtMT(totalSaidas)}</b></div>
+        </div>
+      </div>
+      ${estoqueBaixo.length ? `
+      <div class="card" style="border-color:#7f1d1d;background:rgba(127,29,29,0.15)">
+        <div class="label" style="color:#fca5a5">⚠ Estoque baixo</div>
+        ${estoqueBaixo.map(i=>`<div class="row" style="font-size:13px;color:#fecaca;margin-bottom:4px"><span>${i.nome}</span><span>${i.qtd} restante(s)</span></div>`).join("")}
+      </div>` : ""}
+      <div class="card">
+        <div class="label">Últimas vendas</div>
+        ${vendasHoje.length===0?'<div class="empty">Ainda sem vendas hoje.</div>':
+          vendasHoje.slice(-5).reverse().map(v=>`<div class="list-item"><span>${v.descricao||"Venda"}</span><span class="muted">${fmtTime(v.hora)}</span><b>${fmtMT(v.valor)}</b></div>`).join("")}
+      </div>
+    `;
+  }
+
+  if (tab === "vendas") {
+    c.innerHTML = `
+      ${data.produtos.length ? `
+      <div class="card">
+        <div class="label">Produtos — toca pra vender</div>
+        <div id="falta-aviso"></div>
+        <div class="prod-grid">
+          ${data.produtos.map(p=>`<button class="prod-btn" onclick="venderProduto('${p.id}')"><div class="nome">${p.nome}</div><div class="preco">${fmtMT(p.preco)}</div></button>`).join("")}
+        </div>
+      </div>` : ""}
+      <div class="card">
+        <div class="label">Venda avulsa (sem receita)</div>
+        <input class="numpad" id="v-valor" inputmode="numeric" placeholder="0">
+        <input id="v-desc" placeholder="O que vendeu (opcional)" style="margin-top:8px">
+        <button class="btn-secondary" onclick="addVendaManual()">+ Adicionar venda</button>
+      </div>
+      <div class="card">
+        <div class="label">Vendas de hoje (${vendasHoje.length})</div>
+        ${vendasHoje.length===0?'<div class="empty">Nenhuma venda ainda.</div>':
+          vendasHoje.slice().reverse().map(v=>`
+          <div class="list-item" style="align-items:center">
+            <div><div>${v.descricao||"Venda"}</div><div class="muted">${fmtTime(v.hora)}${v.produtoId?" · estoque descontado":""}</div></div>
+            <div class="row" style="gap:10px"><b style="color:#d97706">${fmtMT(v.valor)}</b><button class="del" onclick="removerVenda('${v.id}')">✕</button></div>
+          </div>`).join("")}
+      </div>
+    `;
+  }
+
+  if (tab === "saidas") {
+    c.innerHTML = `
+      <div class="card">
+        <div class="label">Registar saída de caixa</div>
+        <input class="numpad" id="s-valor" inputmode="numeric" placeholder="0">
+        <input id="s-desc" placeholder="Motivo (ex: compra de gás)" style="margin-top:8px">
+        <button class="btn-secondary" onclick="addSaida()">− Adicionar saída</button>
+      </div>
+      <div class="card">
+        <div class="label">Saídas de hoje (${saidasHoje.length})</div>
+        ${saidasHoje.length===0?'<div class="empty">Nenhuma saída ainda.</div>':
+          saidasHoje.slice().reverse().map(s=>`
+          <div class="list-item" style="align-items:center">
+            <div><div>${s.descricao||"Saída"}</div><div class="muted">${fmtTime(s.hora)}</div></div>
+            <div class="row" style="gap:10px"><b>-${fmtMT(s.valor)}</b><button class="del" onclick="removerSaida('${s.id}')">✕</button></div>
+          </div>`).join("")}
+      </div>
+    `;
+  }
+
+  if (tab === "estoque") {
+    c.innerHTML = `
+      <div class="card">
+        <div class="label">📦 Insumos</div>
+        ${data.estoque.map(item=>{
+          const baixo = item.qtd <= item.minimo;
+          return `<div class="item-row ${baixo?'low':''}">
+            <div><div style="font-size:13px">${item.nome}</div><div class="muted" style="${baixo?'color:#f87171':''}">mínimo: ${item.minimo}${baixo?' · repor!':''}</div></div>
+            <div class="row" style="gap:6px">
+              <button class="qty-btn" onclick="ajustarEstoque('${item.id}',-1)">−</button>
+              <span style="width:24px;text-align:center;font-weight:700">${item.qtd}</span>
+              <button class="qty-btn" onclick="ajustarEstoque('${item.id}',1)">+</button>
+              <button class="del" onclick="removerItemEstoque('${item.id}')">✕</button>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+      <div class="card">
+        <div class="label">Adicionar novo item</div>
+        <input id="e-nome" placeholder="Nome do item" style="margin-bottom:8px">
+        <div class="row" style="gap:8px">
+          <input id="e-qtd" inputmode="numeric" placeholder="Qtd inicial">
+          <input id="e-min" inputmode="numeric" placeholder="Mínimo">
+        </div>
+        <button class="btn-primary" onclick="addItemEstoque()">+ Adicionar item</button>
+      </div>
+    `;
+  }
+
+  if (tab === "produtos") {
+    c.innerHTML = `
+      <div class="card">
+        <div class="label">🍔 ${editingProdId?"Editar produto":"Novo produto"}</div>
+        <input id="p-nome" placeholder="Nome (ex: Hambúrguer 150)" style="margin-bottom:8px">
+        <input id="p-preco" inputmode="numeric" placeholder="Preço de venda (MT)" style="margin-bottom:10px">
+        <div class="muted" style="margin-bottom:6px">Toca nos ingredientes que entram e diz a quantidade:</div>
+        ${data.estoque.map(item=>{
+          const on = recipeSel[item.id] !== undefined;
+          return `<div class="ingr-toggle ${on?'on':''}">
+            <span onclick="toggleIngrediente('${item.id}')" style="flex:1">${item.nome}</span>
+            ${on?`<input value="${recipeSel[item.id]}" inputmode="numeric" onchange="setQtdIngrediente('${item.id}',this.value)">`:""}
+          </div>`;
+        }).join("")}
+        <button class="btn-primary" onclick="salvarProduto()">${editingProdId?"Guardar alterações":"Criar produto"}</button>
+        ${editingProdId?`<button class="btn-secondary" onclick="limparFormProduto()">Cancelar edição</button>`:""}
+      </div>
+      <div class="card">
+        <div class="label">Produtos cadastrados (${data.produtos.length})</div>
+        ${data.produtos.length===0?'<div class="empty">Nenhum produto ainda.</div>':
+          data.produtos.map(p=>`
+          <div style="border:1px solid #292524;border-radius:12px;padding:10px 12px;margin-bottom:8px">
+            <div class="row">
+              <div><div style="font-weight:600;font-size:13px">${p.nome}</div><div style="color:#d97706;font-size:13px">${fmtMT(p.preco)}</div></div>
+              <div class="row" style="gap:10px">
+                <button class="del" style="border:1px solid #44403c;border-radius:8px;padding:4px 8px;font-size:11px;color:#a8a29e" onclick="editarProduto('${p.id}')">Editar</button>
+                <button class="del" onclick="removerProduto('${p.id}')">✕</button>
+              </div>
+            </div>
+            <div class="muted" style="margin-top:4px">${p.receita.map(r=>{const it=data.estoque.find(i=>i.id===r.itemId);return it?`${r.qtd}x ${it.nome}`:null}).filter(Boolean).join(" · ")}</div>
+          </div>`).join("")}
+      </div>
+    `;
+  }
+
+  document.getElementById("tabbar").innerHTML = [
+    ["resumo","Resumo","💰"],["vendas","Vendas","📈"],["produtos","Produtos","👨‍🍳"],["saidas","Saídas","➖"],["estoque","Estoque","📦"]
+  ].map(([id,label,icon])=>`
+    <button class="tab ${tab===id?'active':''}" onclick="setTab('${id}')">
+      <span>${icon}</span><span>${label}</span>
+      ${id==='estoque'&&estoqueBaixo.length?'<span class="dot"></span>':''}
+    </button>`).join("");
+
+  updateSyncPill();
+}
+
+// ---------- Vendas ----------
+function addVendaManual() {
+  const valor = parseInt(document.getElementById("v-valor").value, 10);
+  const desc = document.getElementById("v-desc").value.trim();
+  if (!valor || valor <= 0) return;
+  data.vendas.push({id:uid(), valor, descricao:desc, data:today(), hora:new Date().toISOString()});
+  save(data);
+}
+function removerVenda(id) { data.vendas = data.vendas.filter(v=>v.id!==id); save(data); }
+
+function venderProduto(prodId) {
+  const p = data.produtos.find(x=>x.id===prodId);
+  if (!p) return;
+  const faltando = p.receita.filter(r => {
+    const item = data.estoque.find(i=>i.id===r.itemId);
+    return !item || item.qtd < r.qtd;
+  });
+  if (faltando.length) {
+    const nomes = faltando.map(f => (data.estoque.find(i=>i.id===f.itemId)||{}).nome || "item").join(", ");
+    const el = document.getElementById("falta-aviso");
+    if (el) el.innerHTML = `<div class="warn">Estoque insuficiente para ${p.nome}. Falta: ${nomes}</div>`;
+    setTimeout(()=>{ if(el) el.innerHTML=""; }, 4000);
+    return;
+  }
+  const hora = new Date().toISOString();
+  data.vendas.push({id:uid(), valor:p.preco, descricao:p.nome, data:today(), hora, produtoId:p.id});
+  data.estoque = data.estoque.map(item=>{
+    const rec = p.receita.find(r=>r.itemId===item.id);
+    return rec ? {...item, qtd: Math.max(0, item.qtd - rec.qtd)} : item;
+  });
+  p.receita.forEach(r=>{
+    data.movEstoque.push({id:uid(), itemId:r.itemId, delta:-r.qtd, data:today(), hora, auto:true});
+  });
+  save(data);
+}
+
+// ---------- Saidas ----------
+function addSaida() {
+  const valor = parseInt(document.getElementById("s-valor").value, 10);
+  const desc = document.getElementById("s-desc").value.trim();
+  if (!valor || valor <= 0) return;
+  data.saidas.push({id:uid(), valor, descricao:desc, data:today(), hora:new Date().toISOString()});
+  save(data);
+}
+function removerSaida(id) { data.saidas = data.saidas.filter(s=>s.id!==id); save(data); }
+
+// ---------- Estoque ----------
+function ajustarEstoque(id, delta) {
+  const item = data.estoque.find(i=>i.id===id);
+  item.qtd = Math.max(0, item.qtd + delta);
+  data.movEstoque.push({id:uid(), itemId:id, delta, data:today(), hora:new Date().toISOString()});
+  save(data);
+}
+function addItemEstoque() {
+  const nome = document.getElementById("e-nome").value.trim();
+  const qtd = parseInt(document.getElementById("e-qtd").value,10) || 0;
+  const minimo = parseInt(document.getElementById("e-min").value,10) || 0;
+  if (!nome) return;
+  data.estoque.push({id:uid(), nome, qtd, minimo});
+  save(data);
+}
+function removerItemEstoque(id) { data.estoque = data.estoque.filter(i=>i.id!==id); save(data); }
+
+// ---------- Produtos ----------
+function toggleIngrediente(itemId) {
+  if (recipeSel[itemId] !== undefined) delete recipeSel[itemId];
+  else recipeSel[itemId] = "1";
+  render();
+}
+function setQtdIngrediente(itemId, val) {
+  recipeSel[itemId] = val.replace(/[^0-9]/g,"");
+}
+function limparFormProduto() { recipeSel = {}; editingProdId = null; render(); }
+function salvarProduto() {
+  const nome = document.getElementById("p-nome").value.trim();
+  const preco = parseInt(document.getElementById("p-preco").value,10);
+  if (!nome || !preco) return;
+  const receita = Object.entries(recipeSel).filter(([,q])=>parseInt(q,10)>0).map(([itemId,q])=>({itemId, qtd:parseInt(q,10)}));
+  if (editingProdId) {
+    data.produtos = data.produtos.map(p=>p.id===editingProdId?{...p, nome, preco, receita}:p);
+  } else {
+    data.produtos.push({id:uid(), nome, preco, receita});
+  }
+  limparFormProduto();
+  save(data);
+}
+function editarProduto(id) {
+  const p = data.produtos.find(x=>x.id===id);
+  if (!p) return;
+  editingProdId = id;
+  recipeSel = {};
+  p.receita.forEach(r=>{ recipeSel[r.itemId] = String(r.qtd); });
+  render();
+  setTimeout(()=>{
+    document.getElementById("p-nome").value = p.nome;
+    document.getElementById("p-preco").value = p.preco;
+  }, 0);
+}
+function removerProduto(id) { data.produtos = data.produtos.filter(p=>p.id!==id); save(data); }
+
+// ---------- BOOT ----------
+if (syncId) { startApp(); } else { renderSetup(); }
+</script>
+</body>
+</html>
